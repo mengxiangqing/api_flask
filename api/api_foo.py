@@ -1,14 +1,15 @@
-#!/usr/bin/env python  
-# encoding: utf-8  
+#!/usr/bin/env python
+# encoding: utf-8
 
 
 from flask_restful import Resource, fields, marshal_with, request
 from PIL import Image
 import io
 from exts import db
-from foo_models import Foo,YoloModel
+from foo_models import Foo, YoloModel
 from yolov5.utils.restful_utils import *
 from yolov5.utils.torch_utils import time_sync
+
 
 class HelloWorld(Resource):
     def get(self):
@@ -21,6 +22,8 @@ class HelloWorld(Resource):
             description: hello world
         """
         return 'Hello World!'
+
+
 class FooListApi(Resource):
     resource_fields = {
         'id': fields.Integer,
@@ -85,7 +88,7 @@ class FooApi(Resource):
     """
         foo = db.session.query(Foo).get(id)
         return foo
-        
+
     def post(self):
         """
         创建一条记录
@@ -138,10 +141,12 @@ class FooApi(Resource):
         else:
             return params_error("删除失败！不存在这条记录！")
 
+
 class YoloV5(Resource):
     resource_fields = {
         'image': fields.String,
     }
+
     def post(self):
         """预测图片
         ---
@@ -163,14 +168,14 @@ class YoloV5(Resource):
         if not request.method == "POST":
             return
         if request.files.get("image"):
-            print(f'receive time:({time_sync():.3f})')     
+            print(f'receive time:({time_sync():.3f})')
             image_file = request.files["image"]
             image_bytes = image_file.read()
             img = Image.open(io.BytesIO(image_bytes))
-            t1=time_sync()
-            # results = YoloModel.model2(img, size=640)  # reduce size=320 for faster inference
-            
-            results = YoloModel.model_head(img, size=640)  # reduce size=320 for faster inference
-            print(f'推理时间:({time_sync() - t1:.3f}s)')     
-            print(f'return time:({time_sync():.3f})')     
+            t1 = time_sync()
+            #  reduce size=320 for faster inference
+            results = YoloModel.model_head(img, size=640)  #
+            print(f'推理时间:({time_sync() - t1:.3f}s)')
+            print(f'return time:({time_sync():.3f})')
+            # 返回JSON格式
             return results.pandas().xyxy[0].to_json(orient="records")
