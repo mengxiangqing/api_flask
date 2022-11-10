@@ -7,7 +7,7 @@ from PIL import Image
 import io
 from exts import db
 from foo_models import Foo,YoloModel
-from utils.restful_utils import *
+from yolov5.utils.restful_utils import *
 from yolov5.utils.torch_utils import time_sync
 
 class HelloWorld(Resource):
@@ -169,6 +169,7 @@ class YoloV5(Resource):
             img = Image.open(io.BytesIO(image_bytes))
             t1=time_sync()
             # results = YoloModel.model2(img, size=640)  # reduce size=320 for faster inference
+            
             results = YoloModel.model_head(img, size=640)  # reduce size=320 for faster inference
             print(f'推理时间:({time_sync() - t1:.3f}s)')     
             print(f'return time:({time_sync():.3f})')     

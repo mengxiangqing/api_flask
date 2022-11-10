@@ -1,5 +1,5 @@
-#!/usr/bin/env python  
-# encoding: utf-8  
+#!/usr/bin/env python
+# encoding: utf-8
 
 """ 
 模型
@@ -23,9 +23,11 @@ class Foo(db.Model):
     # 年龄
     age = db.Column(db.INTEGER)
 
+
 class YoloModel():
     # torch.hub.load('','custom'……)第一个选项是hubconf.py文件所在目录，custom代表用户自己的模型
-    model_head = torch.hub.load('yolov5', 'custom', path='yolov5/weights/20211203yolov5s_best.pt',source='local')  # local repo
-    model2=torch.hub.load('yolov5', 'custom', path='yolov5/weights/yolov5s.pt',source='local')
-    # model = torch.hub.load("ultralytics/yolov5", "yolov5s", force_reload=True)  # force_reload to recache
-
+    # local repo
+    # model_head = torch.hub.load('yolov5', 'custom', path='yolov5/weights/20211203yolov5s_best.pt', source='local')
+    model_head = torch.hub.load('yolov5', 'custom', path='yolov5/weights/up_down_bifpn.pt', source='local')
+    model_head.conf = 0.55
+    model_head.iou = 0.45

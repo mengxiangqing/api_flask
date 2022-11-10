@@ -1,7 +1,10 @@
-# YOLOv5 PyTorch utils
+# YOLOv5 🚀 by Ultralytics, GPL-3.0 license
+"""
+PyTorch utils
+"""
 
 import datetime
-import logging
+import math
 import os
 import platform
 import subprocess
@@ -10,20 +13,17 @@ from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
 
-import math
 import torch
-import torch.backends.cudnn as cudnn
 import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
-import torchvision
 
+from yolov5.utils.general import LOGGER
 try:
     import thop  # for FLOPs computation
 except ImportError:
     thop = None
 
-LOGGER = logging.getLogger(__name__)
 
 
 @contextmanager
@@ -32,19 +32,10 @@ def torch_distributed_zero_first(local_rank: int):
     Decorator to make all processes in distributed training wait for each local_master to do something.
     """
     if local_rank not in [-1, 0]:
-        dist.barrier()
+        dist.barrier(device_ids=[local_rank])
     yield
     if local_rank == 0:
-        dist.barrier()
-
-
-def init_torch_seeds(seed=0):
-    # Speed-reproducibility tradeoff https://pytorch.org/docs/stable/notes/randomness.html
-    torch.manual_seed(seed)
-    if seed == 0:  # slower, more reproducible
-        cudnn.benchmark, cudnn.deterministic = False, True
-    else:  # faster, less reproducible
-        cudnn.benchmark, cudnn.deterministic = True, False
+        dist.barrier(device_ids=[0])
 
 
 def date_modified(path=__file__):
@@ -62,7 +53,7 @@ def git_describe(path=Path(__file__).parent):  # path must be a directory
         return ''  # not a git repository
 
 
-def select_device(device='', batch_size=None):
+def select_device(device='', batch_size=None, newline=True):
     # device = 'cpu' or '0' or '0,1,2,3'
     s = f'YOLOv5 🚀 {git_describe() or date_modified()} torch {torch.__version__} '  # string
     device = str(device).strip().lower().replace('cuda:', '')  # to string, 'cuda:0' to '0'
@@ -86,6 +77,8 @@ def select_device(device='', batch_size=None):
     else:
         s += 'CPU\n'
 
+    if not newline:
+        s = s.rstrip()
     LOGGER.info(s.encode().decode('ascii', 'ignore') if platform.system() == 'Windows' else s)  # emoji-safe
     return torch.device('cuda:0' if cuda else 'cpu')
 
@@ -107,7 +100,6 @@ def profile(input, ops, n=10, device=None):
     #     profile(input, [m1, m2], n=100)  # profile over 100 iterations
 
     results = []
-    logging.basicConfig(format="%(message)s", level=logging.INFO)
     device = device or select_device()
     print(f"{'Params':>12s}{'GFLOPs':>12s}{'GPU_mem (GB)':>14s}{'forward (ms)':>14s}{'backward (ms)':>14s}"
           f"{'input':>24s}{'output':>24s}")
@@ -160,11 +152,6 @@ def de_parallel(model):
     return model.module if is_parallel(model) else model
 
 
-def intersect_dicts(da, db, exclude=()):
-    # Dictionary intersection of matching keys and shapes, omitting 'exclude' keys, using da values
-    return {k: v for k, v in da.items() if k in db and not any(x in k for x in exclude) and v.shape == db[k].shape}
-
-
 def initialize_weights(model):
     for m in model.modules():
         t = type(m)
@@ -173,7 +160,7 @@ def initialize_weights(model):
         elif t is nn.BatchNorm2d:
             m.eps = 1e-3
             m.momentum = 0.03
-        elif t in [nn.Hardswish, nn.LeakyReLU, nn.ReLU, nn.ReLU6]:
+        elif t in [nn.Hardswish, nn.LeakyReLU, nn.ReLU, nn.ReLU6,nn.SiLU]:
             m.inplace = True
 
 
@@ -249,25 +236,6 @@ def model_info(model, verbose=False, img_size=640):
     LOGGER.info(f"Model Summary: {len(list(model.modules()))} layers, {n_p} parameters, {n_g} gradients{fs}")
 
 
-def load_classifier(name='resnet101', n=2):
-    # Loads a pretrained model reshaped to n-class output
-    model = torchvision.models.__dict__[name](pretrained=True)
-
-    # ResNet model properties
-    # input_size = [3, 224, 224]
-    # input_space = 'RGB'
-    # input_range = [0, 1]
-    # mean = [0.485, 0.456, 0.406]
-    # std = [0.229, 0.224, 0.225]
-
-    # Reshape output to n classes
-    filters = model.fc.weight.shape[1]
-    model.fc.bias = nn.Parameter(torch.zeros(n), requires_grad=True)
-    model.fc.weight = nn.Parameter(torch.zeros(n, filters), requires_grad=True)
-    model.fc.out_features = n
-    return model
-
-
 def scale_img(img, ratio=1.0, same_shape=False, gs=32):  # img(16,3,256,416)
     # scales img(bs,3,y,x) by ratio constrained to gs-multiple
     if ratio == 1.0:
@@ -288,6 +256,29 @@ def copy_attr(a, b, include=(), exclude=()):
             continue
         else:
             setattr(a, k, v)
+
+
+class EarlyStopping:
+    # YOLOv5 simple early stopper
+    def __init__(self, patience=30):
+        self.best_fitness = 0.0  # i.e. mAP
+        self.best_epoch = 0
+        self.patience = patience or float('inf')  # epochs to wait after fitness stops improving to stop
+        self.possible_stop = False  # possible stop may occur next epoch
+
+    def __call__(self, epoch, fitness):
+        if fitness >= self.best_fitness:  # >= 0 to allow for early zero-fitness stage of training
+            self.best_epoch = epoch
+            self.best_fitness = fitness
+        delta = epoch - self.best_epoch  # epochs without improvement
+        self.possible_stop = delta >= (self.patience - 1)  # possible stop may occur next epoch
+        stop = delta >= self.patience  # stop training if patience exceeded
+        if stop:
+            LOGGER.info(f'Stopping training early as no improvement observed in last {self.patience} epochs. '
+                        f'Best results observed at epoch {self.best_epoch}, best model saved as best.pt.\n'
+                        f'To update EarlyStopping(patience={self.patience}) pass a new patience value, '
+                        f'i.e. `python train.py --patience 300` or use `--patience 0` to disable EarlyStopping.')
+        return stop
 
 
 class ModelEMA:
