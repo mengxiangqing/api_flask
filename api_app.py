@@ -6,7 +6,7 @@ from flask_restful import Api
 from gevent import monkey, pywsgi
 import time
 import config
-from api.api_foo import *
+from api_foo import *
 
 from PIL import Image
 
@@ -17,9 +17,6 @@ monkey.patch_all()
 app = Flask(__name__)
 # 配置文件
 app.config.from_object(config)
-
-# 绑定数据库
-db.init_app(app)
 api = Api(app)
 
 # API可视化管理
@@ -38,12 +35,10 @@ swagger = Swagger(app, config=swagger_config)
 # swagger = Swagger(app)
 
 
-# 某一条记录
-api.add_resource(FooApi, '/api/v1/foo/<int:id>')
-# 所有记录
-api.add_resource(FooListApi, '/api/v1/foos')
-# 预测图片
-api.add_resource(YoloV5, '/yolov5sHead')
+# 检测人数
+api.add_resource(HeadCount, '/yolov5sHead')
+# 检测抬头数
+api.add_resource(HeadUpDown, '/yolov5sUpDown')
 # 首页
 api.add_resource(HelloWorld, '/')
 
