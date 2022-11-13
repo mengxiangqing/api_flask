@@ -55,8 +55,7 @@ class HeadCount(Resource):
         if request.files.get("image"):
             print(f'receive time:({time_sync():.3f})')
             image_file = request.files["image"]
-            image_bytes = image_file.read()
-            img = Image.open(io.BytesIO(image_bytes))
+            img = Image.open(image_file)
             t1 = time_sync()
             #  reduce size=320 for faster inference
             results = YoloModel.model_head(img, size=640)  #
@@ -94,8 +93,7 @@ class HeadUpDown(Resource):
         if request.files.get("image"):
             print(f'receive time:({time_sync():.3f})')
             image_file = request.files["image"]
-            image_bytes = image_file.read()
-            img = Image.open(io.BytesIO(image_bytes))
+            img = Image.open(image_file)
             t1 = time_sync()
             #  reduce size=320 for faster inference
             results = YoloModel.up_down(img, size=640)  #
